@@ -1,24 +1,194 @@
-# build output
-dist/
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Math Blast — Quiz de Matemáticas</title>
+<style>
+:root{
+  --bg:#0f1724;--accent1:#ff3d81;--accent2:#00e0a8;--muted:#9aa7b2;
+}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:#e6eef3;
+     display:flex;align-items:center;justify-content:center;height:100vh;padding:10px;}
+.app{width:100%;max-width:850px;background:rgba(255,255,255,.04);border-radius:14px;
+     box-shadow:0 8px 30px rgba(0,0,0,.6);padding:20px;overflow:hidden}
+h1{margin-top:0;color:var(--accent2);text-align:center;text-shadow:0 0 10px rgba(0,224,168,.5)}
+.menu,.final{text-align:center;animation:fadeIn .6s ease}
+.btn{background:linear-gradient(90deg,var(--accent1),var(--accent2));color:#fff;
+     padding:12px 18px;border:none;border-radius:8px;margin:6px;font-weight:bold;
+     cursor:pointer;transition:.25s;box-shadow:0 4px 10px rgba(0,0,0,.4)}
+.btn:hover{transform:scale(1.05)}
+.btn.secondary{background:transparent;border:2px solid var(--accent2);color:var(--accent2)}
+.q-card{padding:20px;background:rgba(0,0,0,.3);border-radius:10px;animation:slideIn .5s ease}
+.options{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:14px}
+.opt{padding:12px;background:rgba(255,255,255,.06);border:none;border-radius:8px;
+     cursor:pointer;transition:.25s;font-weight:bold}
+.opt:hover{transform:scale(1.05)}
+.opt.correct{background:rgba(0,224,168,.4);animation:bounce .4s}
+.opt.wrong{background:rgba(255,61,129,.4);animation:shake .4s}
+.timerbar{height:10px;background:rgba(255,255,255,.2);border-radius:5px;overflow:hidden;margin-top:10px}
+.timerfill{height:100%;width:100%;background:linear-gradient(90deg,var(--accent2),var(--accent1));transform-origin:left}
+.progress{height:12px;background:rgba(255,255,255,.15);border-radius:6px;overflow:hidden;margin-top:10px}
+.progressfill{height:100%;width:0;background:linear-gradient(90deg,var(--accent1),var(--accent2));transition:width .5s ease}
+.scoreboard{margin-top:10px;font-weight:bold;font-size:18px;text-align:center}
+.final .trophy{font-size:60px;animation:pulse 1.2s infinite alternate}
+@keyframes fadeIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideIn{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
+@keyframes bounce{0%{transform:scale(.9)}50%{transform:scale(1.1)}100%{transform:scale(1)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+@keyframes pulse{from{transform:scale(1)}to{transform:scale(1.1)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Math Blast</h1>
+  <!-- MENU -->
+  <div id="menu" class="menu">
+    <p>Responde operaciones básicas contra el tiempo ⏳</p>
+    <button class="btn" onclick="startGame()">Iniciar juego</button>
+  </div>
 
-# generated types
-.astro/
+  <!-- QUIZ -->
+  <div id="quiz" class="q-card" style="display:none">
+    <div id="questionText">Pregunta</div>
+    <div class="options" id="optionsArea"></div>
+    <div class="timerbar"><div class="timerfill" id="timerFill"></div></div>
+    <div class="progress"><div class="progressfill" id="progressFill"></div></div>
+    <div class="scoreboard">
+      Pregunta <span id="curQ">1</span>/<span id="totalQ">7</span> | 
+      Correctas: <span id="scoreNow">0</span>
+    </div>
+  </div>
 
-# dependencies
-node_modules/
+  <!-- FINAL -->
+  <div id="final" class="final" style="display:none">
+    <div class="trophy" id="finalIcon">🏆</div>
+    <h2 id="finalTitle">¡Ganaste!</h2>
+    <p id="finalScore">90%</p>
+    <button class="btn" onclick="startGame()">Reintentar</button>
+    <button class="btn secondary" onclick="showMenu()">Menú</button>
+  </div>
+</div>
 
-# logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
+<!-- SONIDOS ONLINE -->
+<audio id="sCorrect" src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg"></audio>
+<audio id="sWrong" src="https://actions.google.com/sounds/v1/cartoon/cartoon_boing.ogg"></audio>
+<audio id="sTime" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg"></audio>
+<audio id="sWin" src="https://actions.google.com/sounds/v1/ambiences/crowd_cheer.ogg"></audio>
+<audio id="sLose" src="https://actions.google.com/sounds/v1/cartoon/concussive_drum_hit.ogg"></audio>
 
-# environment variables
-.env
-.env.production
+<script>
+const CONFIG={timePerQ:15,totalQ:7,passing:80};
+let state={index:0,correct:0,questions:[],timer:null,time:CONFIG.timePerQ};
 
-# macOS-specific files
-.DS_Store
+function $(id){return document.getElementById(id);}
+function rand(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
 
-# Local Netlify folder
-.netlify
+function genQ(){
+  let ops=['+','-','×','÷','^','√','combo'];
+  let op=ops[rand(0,ops.length-1)];
+  let a=rand(2,12), b=rand(2,12), c=rand(2,12), ans;
+  let txt="";
+
+  switch(op){
+    case '+': ans=a+b; txt=`${a} + ${b} = ?`; break;
+    case '-': if(b>a)[a,b]=[b,a]; ans=a-b; txt=`${a} - ${b} = ?`; break;
+    case '×': ans=a*b; txt=`${a} × ${b} = ?`; break;
+    case '÷': ans=a; a=a*b; txt=`${a} ÷ ${b} = ?`; break;
+    case '^': ans=Math.pow(a,2); txt=`${a}² = ?`; break;
+    case '√': ans=Math.sqrt(a*b); txt=`√${a*b} = ?`; break;
+    case 'combo': ans=a + b * c; txt=`${a} + ${b} × ${c} = ?`; break;
+  }
+
+  let opts=[ans];
+  while(opts.length<4){
+    let d=Math.round(ans+rand(-10,10));
+    if(d!==ans && !opts.includes(d)) opts.push(d);
+  }
+  opts.sort(()=>Math.random()-0.5);
+  return {txt, ans, opts};
+}
+
+function showMenu(){clearInterval(state.timer);$('menu').style.display='block';$('quiz').style.display='none';$('final').style.display='none';}
+function startGame(){
+  state.index=0;state.correct=0;state.questions=[];
+  for(let i=0;i<CONFIG.totalQ;i++) state.questions.push(genQ());
+  $('totalQ').textContent=CONFIG.totalQ;
+  $('progressFill').style.width='0%';
+  loadQ();$('menu').style.display='none';$('quiz').style.display='block';$('final').style.display='none';
+}
+
+function loadQ(){
+  clearInterval(state.timer);
+  let q=state.questions[state.index];
+  $('questionText').textContent=q.txt;
+  $('optionsArea').innerHTML='';
+  q.opts.forEach(o=>{
+    let b=document.createElement('button');
+    b.className='opt'; b.textContent=o;
+    b.onclick=()=>choose(o);
+    $('optionsArea').appendChild(b);
+  });
+  $('curQ').textContent=state.index+1;
+  animateScore(state.correct);
+  updateProgress();
+  startTimer();
+}
+
+function choose(val){
+  let q=state.questions[state.index];
+  document.querySelectorAll('.opt').forEach(b=>{
+    if(+b.textContent===q.ans){b.classList.add('correct');}
+    else if(+b.textContent===val){b.classList.add('wrong');}
+    b.disabled=true;
+  });
+  if(val===q.ans){state.correct++;$('sCorrect').play();animateScore(state.correct-1);}
+  else{$('sWrong').play();}
+  setTimeout(()=>nextQ(),900);
+}
+
+function nextQ(){
+  state.index++;
+  if(state.index>=CONFIG.totalQ) finish();
+  else loadQ();
+}
+
+function finish(){
+  clearInterval(state.timer);
+  let pct=Math.round(state.correct/CONFIG.totalQ*100);
+  $('finalScore').textContent=pct+'%';
+  if(pct>=CONFIG.passing){$('finalTitle').textContent='¡Ganaste!';$('finalIcon').textContent='🏆';$('sWin').play();}
+  else{$('finalTitle').textContent='Sigue practicando';$('finalIcon').textContent='💪';$('sLose').play();}
+  $('quiz').style.display='none';$('final').style.display='block';
+}
+
+function startTimer(){
+  state.time=CONFIG.timePerQ;
+  $('timerFill').style.transition=`none`;
+  $('timerFill').style.transform='scaleX(1)';
+  setTimeout(()=>{ $('timerFill').style.transition=`transform ${CONFIG.timePerQ}s linear`; $('timerFill').style.transform='scaleX(0)'; },50);
+  state.timer=setInterval(()=>{
+    state.time--;
+    if(state.time<=0){clearInterval(state.timer);$('sTime').play();choose(NaN);}
+  },1000);
+}
+
+function animateScore(oldVal){
+  let target=state.correct;
+  let current=oldVal;
+  let step= target>oldVal?1:-1;
+  function tick(){
+    current+=step;
+    $('scoreNow').textContent=current;
+    if(current!==target) requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+function updateProgress(){
+  let percent=((state.index)/CONFIG.totalQ)*100;
+  $('progressFill').style.width=percent+'%';
+}
+</script>
+</body>
+</html>
